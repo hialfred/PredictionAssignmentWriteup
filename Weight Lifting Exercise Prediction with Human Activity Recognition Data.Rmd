@@ -1,0 +1,134 @@
+---
+title: "Weight Lifting Exercise Prediction with Human Activity Recognition Data"
+author: "Red Chan"
+date: "June 3, 2016"
+output: html_document
+---
+
+## Introduction
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report 
+
+1. describing how you built your model
+2. how you used cross validation
+3. what you think the expected out of sample error is
+4. you will also use your prediction model to predict 20 different test cases.
+
+The rows are the 'arrays' and the columns are the things measured.
+
+
+## Analysis Outline
+#### * [0] Setup
+  + [A] Retrieve Data
+  + [B] Clean Data
+  + [C] Partition training set into 60-40 train-test cross validation
+  
+#### * [1] describing how you built your model - Prediction Model by Random forest
+#### * [2] how you used cross validation - Performance of Random forest model
+#### * [3] what you think the expected out of sample error is
+#### * [4] you will also use your prediction model to predict 20 different test cases
+
+---
+
+## [0] Setup
+
+### [0.A] Retrieve Data
+
+```{r, warning = FALSE, message = FALSE, comment = FALSE}
+library(caret)
+library(randomForest) 
+library(e1071)
+
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(trainUrl), na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(testUrl), na.strings=c("NA","#DIV/0!",""))
+
+remove(trainUrl, testUrl)
+```
+
+### [0.B] Clean
+
+```{r}
+# first off, the data is cleaned off variance near zeroes
+nearzero <- nearZeroVar(training, saveMetrics=TRUE)
+trainingFilt <- training[, !nearzero$nzv]
+
+nearzero <- nearZeroVar(testing, saveMetrics=TRUE)
+testingFilt <- testing[, !nearzero$nzv]
+
+# make sure the tested variables are the same
+trainingFilt <- trainingFilt[ ,names(trainingFilt) %in% names(testingFilt)]
+testingFilt <- testingFilt[ ,names(testingFilt) %in% names(trainingFilt)]
+# add back classe column
+trainingFilt <- cbind(trainingFilt, classe = training$classe)
+
+# second we will remove the identifier information - row number, usernames, timestamps, window
+trainingFilt <- trainingFilt[ , -c(1:7)]
+testingFilt <- testingFilt[ , -c(1:7)]
+
+dim(trainingFilt)
+dim(testingFilt)
+```
+
+### [0.C] Partition training set
+Remember that we split 60% training and 40% testing. Unless large dataset, then 80% training and 20% testing.
+
+```{r}
+indexTrain <- createDataPartition(y = trainingFilt$classe, p=6/10, list=FALSE)
+keepForTrain <-trainingFilt[indexTrain, ]
+keepForTest <- trainingFilt[-indexTrain, ]
+```
+
+---
+
+## [1] describing how you built your model
+
+### Prediction Model by Random forest
+
+Using the 60% split for training, we will build a prediction model. Random forest was the selected choice due to its accuracy rate and robustness in selecting correlated covariates and outliers. We will cross validate it by trainContr() with a 5 iterations. Note from the graph that approximately only half the predictors are used to achieve the highest accuracy. 
+
+```{r}
+control <- trainControl(method = "cv", 5)
+model <- train(classe ~ . , data = keepForTrain, method = "rf", trControl = control, ntree = 250)
+plot(model)
+model
+```
+
+---
+
+## [2] how you used cross validation
+
+### Performance of Random forest model
+
+Using the 40% split for testing/cross validation, we will evaluate our predicted model. The confusion matrix will evaluate the performance of the classification model. postResample function will get the mean squared error and the r-square. The overall agreement rate and estimated out of sample error will be determined.
+
+```{r}
+predict <- predict(model, keepForTest)
+confusionMatrix(keepForTest$classe, predict)
+```
+
+---
+
+## [3] what you think the expected out of sample error is
+
+```{r}
+accuracy <- postResample(predict, keepForTest$classe); accuracy
+oose <- 1 - as.numeric(confusionMatrix(keepForTest$classe, predict)$overall[1])
+```
+
+### The model reached an accuracy of `r paste0(round(accuracy[[1]]*100,3), "%")`
+### The expected out of sample error is only `r paste0(round(oose,6))`
+
+---
+
+## [4] you will also use your prediction model to predict 20 different test cases.
+
+Now to go back to the original testing data that we setup and cleaned. We will use our model to predict their classes and confirm with the course website.
+
+```{r}
+predict(model, testingFilt)
+```
